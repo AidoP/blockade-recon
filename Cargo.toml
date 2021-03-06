@@ -1,0 +1,14 @@
+[package]
+name = "blockade-recon"
+version = "0.1.0"
+authors = ["AidoP <aidop@me.com>"]
+description = "A tool for sniffing out 802.11 devices"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+termion = "1.5.6"
+tui = "0.14"
+pcap = "0.8"
+clap = "2.33"
