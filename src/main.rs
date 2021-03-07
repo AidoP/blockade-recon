@@ -18,18 +18,6 @@ mod ui;
 mod wifi;
 
 fn main() {
-    println!("Parsing Manufacturer Names");
-    let oui_db = OuiDatabase::new_from_str(include_str!("oui_database")).expect("Failed to parse MAC address lookup database");
-    let backend = TermionBackend::new(
-        AlternateScreen::from(
-            MouseTerminal::from(
-                std::io::stdout().into_raw_mode().expect("Unable to switch stdout to raw mode")
-            )
-        )
-    );
-    let mut terminal = tui::Terminal::new(backend).expect("Unable to create TUI");
-    let input = ui::Input::new();
-
     let args = App::new("Blockade Recon 2")
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
@@ -41,6 +29,18 @@ fn main() {
             .help("Don't pick a default wireless interface to sniff traffic on")
         )
         .get_matches();
+    
+    println!("Parsing Manufacturer Names");
+    let oui_db = OuiDatabase::new_from_str(include_str!("oui_database")).expect("Failed to parse MAC address lookup database");
+    let backend = TermionBackend::new(
+        AlternateScreen::from(
+            MouseTerminal::from(
+                std::io::stdout().into_raw_mode().expect("Unable to switch stdout to raw mode")
+            )
+        )
+    );
+    let mut terminal = tui::Terminal::new(backend).expect("Unable to create TUI");
+    let input = ui::Input::new();
     
     let mut device = if args.is_present("interface") {
         let devices = Device::list().expect("Unable to find devices");
