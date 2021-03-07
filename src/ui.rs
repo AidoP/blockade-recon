@@ -1,47 +1,49 @@
-use std::{io::Write, thread::{self, JoinHandle}, sync::mpsc::{self, Sender, Receiver}};
+use std::{io::Write, thread::{self, JoinHandle}, sync::mpsc::{self, Sender, Receiver}, ops::{Deref, DerefMut}};
 use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
     layout::Layout,
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, StatefulWidget},
     style::{Style, Modifier, Color},
     text::{Span, Spans}
 };
 
-pub struct ItemList<'a> {
-    pub item_count: usize,
-    pub items: List<'a>,
-    pub state: ListState
+pub struct ListState{
+    state: tui::widgets::ListState,
+    item_count: usize
 }
-impl<'a> ItemList<'a> {
-    pub fn new<I: Iterator<Item=&'a str>>(items: I, title: &'a str) -> Self {
-        let items: Vec<_> = items.into_iter().map(|i| ListItem::new(vec![Spans::from(i)])).collect();
-        let mut state = ListState::default();
+impl ListState {
+    pub fn with_item_count(item_count: usize) -> Self {
+        let mut state = tui::widgets::ListState::default();
         state.select(Some(0));
         Self {
-            item_count: items.len(),
-            items: List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(title))
-                .highlight_style(Style::default().bg(Color::Reset).add_modifier(Modifier::REVERSED))
-                .highlight_symbol("> "),
-            state
+            state,
+            item_count
         }
+    }
+    pub fn set_item_count(&mut self, item_count: usize) {
+        if let Some(selected) = self.state.selected() {
+            if selected >= item_count {
+                self.state.select(Some(selected.saturating_sub(1)))
+            }
+        }
+        self.item_count = item_count;
     }
     pub fn up(&mut self) {
         if let Some(selected) = self.state.selected() {
             if selected <= 0 {
-                self.state.select(Some(self.item_count - 1))
+                self.state.select(Some(self.item_count.saturating_sub(1)))
             } else {
-                self.state.select(Some(selected - 1))
+                self.state.select(Some(selected.saturating_sub(1)))
             }
         }
     }
     pub fn down(&mut self) {
         if let Some(selected) = self.state.selected() {
-            if selected >= self.item_count - 1 {
+            if selected >= self.item_count.saturating_sub(1) {
                 self.state.select(Some(0))
             } else {
-                self.state.select(Some(selected + 1))
+                self.state.select(Some(selected.saturating_add(1)))
             }
         }
     }
@@ -49,7 +51,28 @@ impl<'a> ItemList<'a> {
         self.state.select(Some(0))
     }
     pub fn bottom(&mut self) {
-        self.state.select(Some(self.item_count - 1))
+        self.state.select(Some(self.item_count.saturating_sub(1)))
+    }
+}
+impl Default for ListState {
+    fn default() -> Self {
+        let mut state = tui::widgets::ListState::default();
+        state.select(Some(0));
+        Self {
+            state,
+            item_count: 0
+        }
+    }
+}
+impl Deref for ListState {
+    type Target = tui::widgets::ListState;
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+impl DerefMut for ListState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
     }
 }
 
