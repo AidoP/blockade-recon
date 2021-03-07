@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use pcap::Packet;
 
 #[derive(Debug)]
@@ -10,22 +12,69 @@ impl Mac {
 }
 
 #[derive(Debug)]
+pub enum Tag {
+    Ssid(String),
+    SupportedRates(Vec<u8>),
+    Country {
+        code: [u8; 2],
+    },
+    VendorSpecific {
+        vendor: [u8; 3],
+    },
+    Unknown
+}
+impl Tag {
+    /// Parse a single management tag, removing itself from the start of the given buffer
+    pub fn parse(data: &mut &[u8]) -> Result<Self> {
+        let &length = data.get(1).ok_or(Error::UnexpectedEof)?;
+        let tag = data[0];
+        let (d, other) = data.split_at(2 + length as usize);
+        *data = other;
+        let data = &d[2..];
+        Ok(match tag {
+            0x00 => Self::Ssid(String::from_utf8_lossy(data).to_string()),
+            0x01 => Self::SupportedRates(data.to_vec()),
+            0x07 => Self::Country {
+                code: [data[0], data[1]]
+            },
+            0xdd => Self::VendorSpecific {
+                vendor: [data[0], data[1], data[2]]
+            },
+            _ => Self::Unknown
+        })
+    }
+    /// Parse all of the management tags inside of a given buffer
+    pub fn parse_all(mut data: &[u8]) -> Result<Vec<Self>> {
+        let mut tags = vec![];
+        while !data.is_empty() {
+            tags.push(Self::parse(&mut data)?)
+        }
+        Ok(tags)
+    }
+}
+
+#[derive(Debug)]
 pub enum FrameType {
     AssociationRequest,
     AssociationResponse,
     ReassociationRequest,
     ReassociationResponse,
-    Beacon
+    Beacon,
+    Ack,
+    Reserved,
+    Unknown
 }
 impl FrameType {
-    fn new(ty: u16, subty: u16) -> Self {
+    fn new(ty: u8, subty: u8) -> Self {
         match (ty, subty) {
             (0, 0) => Self::AssociationRequest,
             (0, 1) => Self::AssociationResponse,
             (0, 2) => Self::ReassociationRequest,
             (0, 3) => Self::ReassociationResponse,
             (0, 8) => Self::Beacon,
-            _ => Self::AssociationRequest
+            (1, 13) => Self::Ack,
+            (2, 13) => Self::Reserved,
+            _ => Self::Unknown
         }
     }
 }
@@ -35,17 +84,25 @@ pub enum Frame {
     Beacon {
         destination: Mac,
         source: Mac,
-        ssid: String
+        bssid: Mac,
+        ssid: String,
+        tags: Vec<Tag>
     },
-    None
+    Ack {
+        reciever: Mac,
+    },
+    Unknown
 }
 impl Frame {
     pub fn parse(packet: &[u8]) -> Result<Self> {
-        if packet.len() < 32 {
-            panic!("Frame too small. 802.11 frames must be >= 32 bytes in length")
+        if packet.len() < 10 {
+            return Err(Error::UnexpectedEof)
         }
-        let frame_control = u16::from_le_bytes([packet[0], packet[1]]);
-        println!("FC: {:08b}", frame_control);
+        let frame_control = packet[0];
+        let flags = packet[1];
+        let duration = u16::from_le_bytes([packet[2], packet[3]]);
+        let address1 = Mac::new(&packet[4..10]);
+
         let version = frame_control & 0b11;
         if version != 0 {
             return Err(Error::InvalidVersion(version));
@@ -53,16 +110,24 @@ impl Frame {
         let frame_type = FrameType::new((frame_control >> 2) & 0b11, (frame_control >> 4) & 0b1111);
 
         match frame_type {
-            FrameType::Beacon => Self::beacon(packet),
-            _ => Ok(Self::None)
+            FrameType::Beacon => Self::beacon(address1, Mac::new(&packet[10..16]), Mac::new(&packet[16..22]), u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
+            FrameType::Ack => Ok(Self::Ack { reciever: address1 }),
+            _ => Ok(Self::Unknown)
         }
     }
 
-    pub fn beacon(bytes: &[u8]) -> Result<Self> {
+    pub fn beacon(destination: Mac, source: Mac, bssid: Mac, sequence_control: u16, data: &[u8]) -> Result<Self> {
+        let timestamp = u64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]);
+        let beacon_interval = u16::from_le_bytes([data[8], data[9]]);
+        let capabilities = u16::from_le_bytes([data[10], data[11]]);
+        let tags = Tag::parse_all(&data[12..data.len() - 4])?;
+        let ssid = tags.iter().find_map(|tag| if let Tag::Ssid(ssid) = tag { Some(ssid.clone()) } else { None }).ok_or(Error::MissingTag("SSID"))?;
         Ok(Self::Beacon {
-            destination: Mac::new(&bytes[4..10]),
-            source: Mac::new(&bytes[10..16]),
-            ssid: String::from("apples")
+            destination,
+            source,
+            bssid,
+            ssid,
+            tags
         })
     }
 }
@@ -70,6 +135,8 @@ impl Frame {
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
-    InvalidVersion(u16),
-    UnrecognisedFrameType
+    UnexpectedEof,
+    InvalidVersion(u8),
+    UnrecognisedFrameType,
+    MissingTag(&'static str)
 }

@@ -57,14 +57,12 @@ fn main() {
 
     std::mem::drop(terminal);
 
-    println!("test");
-
     let mut capture = Capture::from_device(device).unwrap()
         .promisc(true)
         .rfmon(true)
-        .immediate_mode(false)
+        .immediate_mode(true)
         .open().unwrap();
-    let mut savefile = capture.savefile("t.pcap").unwrap();
+    let mut savefile = capture.savefile("capture.pcap").unwrap();
 
     println!("Current datalink: {:?}", capture.get_datalink().get_name());
     for dl in capture.list_datalinks().unwrap() {
@@ -79,13 +77,8 @@ fn main() {
         }
         let packet = capture.next().unwrap();
         savefile.write(&packet);
-        println!();
-        for byte in packet.data {
-            print!("{:b},", byte)
-        }
-        println!();
+        
         let (radiotap, data) = Radiotap::parse(packet.data).unwrap();
-        println!("{:?}", wifi::Frame::parse(data).unwrap());
-        //println!("Packet: {:?}", capture.next().unwrap())
+        println!("{:?}", wifi::Frame::parse(data));
     }
 }
