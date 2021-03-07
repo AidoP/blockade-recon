@@ -1,15 +1,8 @@
 use std::borrow::Cow;
 
+use oui::{OuiDatabase, OuiEntry};
+use eui48::MacAddress;
 use pcap::Packet;
-
-#[derive(Debug)]
-pub struct Mac([u8; 6]);
-impl Mac {
-    pub fn new(d: &[u8]) -> Self {
-        assert_eq!(d.len(), 6);
-        Self([d[0], d[1], d[2], d[3], d[4], d[5]])
-    }
-}
 
 #[derive(Debug)]
 pub enum Tag {
@@ -82,14 +75,14 @@ impl FrameType {
 #[derive(Debug)]
 pub enum Frame {
     Beacon {
-        destination: Mac,
-        source: Mac,
-        bssid: Mac,
+        destination: MacAddress,
+        source: MacAddress,
+        bssid: MacAddress,
         ssid: String,
         tags: Vec<Tag>
     },
     Ack {
-        reciever: Mac,
+        reciever: MacAddress,
     },
     Unknown
 }
@@ -101,7 +94,7 @@ impl Frame {
         let frame_control = packet[0];
         let flags = packet[1];
         let duration = u16::from_le_bytes([packet[2], packet[3]]);
-        let address1 = Mac::new(&packet[4..10]);
+        let address1 = MacAddress::from_bytes(&packet[4..10])?;
 
         let version = frame_control & 0b11;
         if version != 0 {
@@ -110,13 +103,13 @@ impl Frame {
         let frame_type = FrameType::new((frame_control >> 2) & 0b11, (frame_control >> 4) & 0b1111);
 
         match frame_type {
-            FrameType::Beacon => Self::beacon(address1, Mac::new(&packet[10..16]), Mac::new(&packet[16..22]), u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
+            FrameType::Beacon => Self::beacon(address1, MacAddress::from_bytes(&packet[10..16])?, MacAddress::from_bytes(&packet[16..22])?, u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
             FrameType::Ack => Ok(Self::Ack { reciever: address1 }),
             _ => Ok(Self::Unknown)
         }
     }
 
-    pub fn beacon(destination: Mac, source: Mac, bssid: Mac, sequence_control: u16, data: &[u8]) -> Result<Self> {
+    pub fn beacon(destination: MacAddress, source: MacAddress, bssid: MacAddress, sequence_control: u16, data: &[u8]) -> Result<Self> {
         let timestamp = u64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]);
         let beacon_interval = u16::from_le_bytes([data[8], data[9]]);
         let capabilities = u16::from_le_bytes([data[10], data[11]]);
@@ -138,5 +131,11 @@ pub enum Error {
     UnexpectedEof,
     InvalidVersion(u8),
     UnrecognisedFrameType,
-    MissingTag(&'static str)
+    MissingTag(&'static str),
+    InvalidMac(eui48::ParseError)
+}
+impl From<eui48::ParseError> for Error {
+    fn from(error: eui48::ParseError) -> Self {
+        Self::InvalidMac(error)
+    }
 }
