@@ -76,6 +76,36 @@ impl DerefMut for ListState {
     }
 }
 
+pub struct TabState<'a> {
+    pub titles: Vec<Spans<'a>>,
+    pub index: usize
+}
+impl<'a> TabState<'a> {
+    pub fn new(titles: Vec<Spans<'a>>) -> Self {
+        Self {
+            titles,
+            index: 0
+        }
+    }
+    pub fn select(&mut self, index: usize) {
+        self.index = index.clamp(0, self.titles.len() - 1)
+    }
+    pub fn next(&mut self) {
+        if self.index >= self.titles.len() - 1 {
+            self.index = 0
+        } else {
+            self.index += 1
+        }
+    }
+    pub fn previous(&mut self) {
+        if self.index <= 0 {
+            self.index = self.titles.len() - 1
+        } else {
+            self.index -= 1
+        }
+    }
+}
+
 pub struct Input {
     pub stdin: Receiver<Key>,
 }

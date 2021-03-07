@@ -8,7 +8,7 @@ use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::IntoRawMode, sc
 use tui::{
     backend::TermionBackend,
     layout::{Constraint, Direction, Layout},
-    widgets::{BarChart, Block, Borders, List, ListItem},
+    widgets::{BarChart, Block, Borders, List, ListItem, Tabs},
     style::{Style, Modifier, Color},
     text::{Span, Spans}
 };
@@ -16,6 +16,7 @@ use wifi::Frame;
 
 mod ui;
 mod wifi;
+mod page;
 
 fn main() {
     let args = App::new("Blockade Recon 2")
@@ -93,65 +94,38 @@ fn main() {
     }
 
     let mut devices = DeviceList::default();
-    let mut device_list_state = ui::ListState::default();
+    let pages: &mut [&mut dyn page::Page] = &mut [&mut page::Devices::new(), &mut page::Manufacturers::new()];
+    let mut tabs = ui::TabState::new(pages.iter().map(|p| Spans::from(p.name())).collect());
     'sniff: loop {
         for key in input.stdin.try_iter() {
             match key {
                 Key::Esc => break 'sniff,
-                Key::Up | Key::Char('w') => device_list_state.up(),
-                Key::Down | Key::Char('s') => device_list_state.down(),
-                Key::PageUp => device_list_state.top(),
-                Key::PageDown => device_list_state.bottom(),
+                Key::F(i) => tabs.select(i as usize),
+                Key::Char('\t') => tabs.next(),
+                Key::Up | Key::Char('w') => pages[tabs.index].up(),
+                Key::Down | Key::Char('s') => pages[tabs.index].down(),
+                Key::PageUp => pages[tabs.index].top(),
+                Key::PageDown => pages[tabs.index].bottom(),
                 _ => ()
             }
         }
 
-        device_list_state.set_item_count(devices.len());
-        let device_list = List::new(
-            devices.iter().map(|(mac, device)| {
-                let mut spans = vec![];
-                let colour = if device.sent {
-                    Color::LightGreen
-                } else {
-                    Color::LightYellow
-                };
-                spans.push(Span::styled(mac.to_hex_string(), Style::reset().fg(colour)));
-                if let Some(OuiEntry { name_short, ..}) = &device.manufacturer {
-                    spans.push(Span::styled(format!(" | {}", name_short), Style::reset()));
-                }
-
-                ListItem::new(vec![
-                    Spans::from(spans)
-                ])
-            }
-            ).collect::<Vec<_>>()
-        )
-            .block(Block::default().borders(Borders::ALL).title("Devices"))
-            .highlight_style(Style::default().bg(Color::Reset).add_modifier(Modifier::REVERSED))
-            .highlight_symbol("> ");
-        let bar_data = devices.bar_data();
-        let barchart = BarChart::default()
-            .block(Block::default().borders(Borders::ALL).title("Manufacturers"))
-            .data(&bar_data)
-            .bar_width(4)
-            .bar_gap(1)
-            .bar_style(Style::reset().fg(Color::Blue))
-            .value_style(Style::reset().fg(Color::Blue).add_modifier(Modifier::REVERSED));
-
-        terminal.draw(|f| {
-            let vertical_areas = Layout::default()
+        terminal.draw(|frame| {
+            let areas = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(0)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(f.size());
-            let top_areas = Layout::default()
-                .direction(Direction::Horizontal)
-                .margin(0)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(vertical_areas[0]);
-            f.render_stateful_widget(device_list, top_areas[0], &mut device_list_state);
-            f.render_widget(barchart, vertical_areas[1]);
-        }).expect("Unable to draw tui");
+                .constraints([Constraint::Length(2), Constraint::Min(0)])
+                .split(frame.size());
+            frame.render_widget(
+                Tabs::new(tabs.titles.clone())
+                    .block(Block::default().borders(Borders::BOTTOM))
+                    .select(tabs.index)
+                    .style(Style::reset())
+                    .highlight_style(Style::reset().add_modifier(Modifier::BOLD | Modifier::REVERSED)),
+                areas[0]
+            );
+            pages[tabs.index].render(frame, areas[1], &mut devices)
+        }).expect("Unable to draw to stdout");
 
         let packet = capture.next().unwrap();
         savefile.write(&packet);
@@ -213,7 +187,7 @@ impl KnownDevice {
 }
 
 #[derive(Debug, Default)]
-struct DeviceList(HashMap<MacAddress, KnownDevice>);
+pub struct DeviceList(HashMap<MacAddress, KnownDevice>);
 impl DeviceList {
     fn get_or_default(&mut self, address: MacAddress, oui_db: &OuiDatabase) -> &mut KnownDevice {
         if self.contains_key(&address) {
@@ -223,7 +197,7 @@ impl DeviceList {
             self.get_mut(&address).unwrap()
         }
     }
-    fn bar_data(&self) -> Vec<(&str, u64)> {
+    pub fn bar_data(&self) -> Vec<(&str, u64)> {
         let mut manufacturers = HashMap::new();
         for device in self.values() {
             if let Some(OuiEntry { name_short, ..}) = &device.manufacturer {
