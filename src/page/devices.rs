@@ -70,6 +70,12 @@ impl Page for Devices {
                 .split(area);
             let mut device_info = vec![];
 
+            if !device.sent {
+                device_info.push(Spans::from(vec![
+                    Span::styled("Known by reference from other devices only", Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD))
+                ]));
+                
+            }
             if let Some(ssid) = &device.beacon {
                 device_info.push(format_header("Beacon"));
                 device_info.push(Spans::from(vec![
