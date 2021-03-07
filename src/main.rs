@@ -40,22 +40,22 @@ fn main() {
         let devices = Device::list().expect("Unable to find devices");
         let mut list = ui::ItemList::new(devices.iter().map(|d| d.name.as_str()), "Select a WiFi Device");
 
+        let mut draw = |list: &mut ui::ItemList| terminal.draw(|f| {
+            f.render_stateful_widget(list.items.clone(), f.size(), &mut list.state)
+        }).expect("Unable to create list widget");
+        draw(&mut list);
         'select_device: loop {
-            for key in input.stdin.try_iter() {
+            for key in input.stdin.iter() {
                 match key {
                     Key::Esc => return,
-                    Key::Up | Key::Char('w') => list.up(),
-                    Key::Down | Key::Char('s') => list.down(),
-                    Key::PageUp => list.top(),
-                    Key::PageDown => list.bottom(),
+                    Key::Up | Key::Char('w') => { list.up(); draw(&mut list) }
+                    Key::Down | Key::Char('s') => { list.down(); draw(&mut list) }
+                    Key::PageUp => { list.top(); draw(&mut list) }
+                    Key::PageDown => { list.bottom(); draw(&mut list) }
                     Key::Char('\n') => break 'select_device devices[list.state.selected().unwrap()].clone(),
                     _ => ()
                 }
             }
-            terminal.draw(|f| {
-                f.render_stateful_widget(list.items.clone(), f.size(), &mut list.state)
-            }).expect("Unable to create list widget");
-            std::thread::sleep(std::time::Duration::from_millis(1))
         }
     } else {
         Device::lookup().expect("Unable to choose a default device")
