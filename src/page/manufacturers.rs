@@ -1,16 +1,14 @@
-use oui::{OuiDatabase, OuiEntry};
-use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::RawTerminal, screen::AlternateScreen};
+use termion::{input::MouseTerminal, raw::RawTerminal, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
-    layout::{Rect, Constraint, Direction, Layout},
-    widgets::{BarChart, Block, Borders, List, ListItem, Tabs},
+    layout::Rect,
+    widgets::{BarChart, Block, Borders},
     style::{Style, Modifier, Color},
-    text::{Span, Spans},
     terminal::Frame
 };
 
 use super::Page;
-use crate::{DeviceList, ui};
+use crate::DeviceList;
 
 pub struct Manufacturers {
 

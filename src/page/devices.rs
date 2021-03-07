@@ -1,9 +1,9 @@
-use oui::{OuiDatabase, OuiEntry};
-use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::RawTerminal, screen::AlternateScreen};
+use oui::{OuiEntry};
+use termion::{input::MouseTerminal, raw::RawTerminal, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
     layout::{Rect, Constraint, Direction, Layout},
-    widgets::{Paragraph, Block, Borders, List, ListItem, Tabs},
+    widgets::{Paragraph, Block, Borders, List, ListItem},
     style::{Style, Modifier, Color},
     text::{Span, Spans},
     terminal::Frame

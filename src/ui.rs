@@ -1,11 +1,7 @@
-use std::{io::Write, thread::{self, JoinHandle}, sync::mpsc::{self, Sender, Receiver}, ops::{Deref, DerefMut}};
-use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::IntoRawMode, screen::AlternateScreen};
+use std::{thread, sync::mpsc::{self, Receiver}, ops::{Deref, DerefMut}};
+use termion::{event::Key, input::TermRead};
 use tui::{
-    backend::TermionBackend,
-    layout::Layout,
-    widgets::{Block, Borders, List, ListItem, StatefulWidget},
-    style::{Style, Modifier, Color},
-    text::{Span, Spans}
+    text::Spans
 };
 
 pub struct ListState{

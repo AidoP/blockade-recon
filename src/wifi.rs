@@ -1,8 +1,4 @@
-use std::borrow::Cow;
-
-use oui::{OuiDatabase, OuiEntry};
 use eui48::MacAddress;
-use pcap::Packet;
 
 #[derive(Debug)]
 pub enum Tag {

@@ -1,10 +1,7 @@
-use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::RawTerminal, screen::AlternateScreen};
+use termion::{input::MouseTerminal, raw::RawTerminal, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
-    layout::{Rect, Constraint, Direction, Layout},
-    widgets::{BarChart, Block, Borders, List, ListItem},
-    style::{Style, Modifier, Color},
-    text::{Span, Spans},
+    layout::Rect,
     terminal::Frame
 };
 
@@ -18,9 +15,7 @@ use crate::DeviceList;
 
 pub trait Page {
     fn name(&self) -> &'static str;
-    fn render(&mut self, frame: &mut Frame<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>>, area: Rect, devices: &mut DeviceList) {
-
-    }
+    fn render(&mut self, frame: &mut Frame<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>>, area: Rect, devices: &mut DeviceList);
     fn up(&mut self);
     fn down(&mut self);
     fn top(&mut self);

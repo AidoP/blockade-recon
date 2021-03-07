@@ -4,15 +4,14 @@ use pcap::{Capture, Device};
 use radiotap::Radiotap;
 use oui::{OuiDatabase, OuiEntry};
 use clap::{Arg, App};
-use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::IntoRawMode, screen::AlternateScreen};
+use termion::{event::Key, input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
     layout::{Constraint, Direction, Layout},
-    widgets::{BarChart, Block, Borders, List, ListItem, Tabs},
+    widgets::{Block, Borders, List, ListItem, Tabs},
     style::{Style, Modifier, Color},
-    text::{Span, Spans}
+    text::Spans
 };
-use wifi::Frame;
 
 mod ui;
 mod wifi;
@@ -43,7 +42,7 @@ fn main() {
     let mut terminal = tui::Terminal::new(backend).expect("Unable to create TUI");
     let input = ui::Input::new();
     
-    let mut device = if args.is_present("interface") {
+    let device = if args.is_present("interface") {
         let devices = Device::list().expect("Unable to find devices");
         let devices_names: Vec<_> = devices.iter().map(|d| ListItem::new(vec![Spans::from(d.name.as_str())])).collect();
         let list = List::new(devices_names)
@@ -209,7 +208,6 @@ impl DeviceList {
             }
         }
         let mut values: Vec<(&str, u64)> = manufacturers.iter().map(|(&name, &count)| (name, count)).collect();
-        use std::cmp::Reverse;
         values.sort_by(|(nl, l), (nr, r)| l.cmp(r).then_with(|| nl.cmp(nr)));
         values.reverse();
         values
