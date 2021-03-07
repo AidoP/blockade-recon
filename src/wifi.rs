@@ -82,7 +82,7 @@ pub enum Frame {
         tags: Vec<Tag>
     },
     Ack {
-        reciever: MacAddress,
+        receiver: MacAddress,
     },
     Unknown
 }
@@ -104,8 +104,17 @@ impl Frame {
 
         match frame_type {
             FrameType::Beacon => Self::beacon(address1, MacAddress::from_bytes(&packet[10..16])?, MacAddress::from_bytes(&packet[16..22])?, u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
-            FrameType::Ack => Ok(Self::Ack { reciever: address1 }),
+            FrameType::Ack => Ok(Self::Ack { receiver: address1 }),
             _ => Ok(Self::Unknown)
+        }
+    }
+
+    /// Get the MacAddress of the sender of the packet
+    /// Though all packets are sent by *someone*, not all packets advertise such
+    pub fn sender(&self) -> Option<MacAddress> {
+        match self {
+            &Frame::Beacon { source, ..} => Some(source),
+            _ => None
         }
     }
 

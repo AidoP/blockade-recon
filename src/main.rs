@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::HashMap, ops::{Deref, DerefMut}};
 use eui48::MacAddress;
 use pcap::{Capture, Device};
 use radiotap::Radiotap;
@@ -12,6 +12,7 @@ mod ui;
 mod wifi;
 
 fn main() {
+    println!("Parsing Manufacturer Names");
     let oui_db = OuiDatabase::new_from_str(include_str!("oui_database")).expect("Failed to parse MAC address lookup database");
     let backend = TermionBackend::new(
         AlternateScreen::from(
@@ -80,8 +81,7 @@ fn main() {
         }
     }
 
-    let mut known_macs = HashSet::new();
-    let mut manufacturer_count = HashMap::new();
+    let mut devices = DeviceList::default();
     'sniff: loop {
         for key in input.stdin.try_iter() {
             match key {
@@ -98,22 +98,78 @@ fn main() {
             match frame {
                 Beacon {
                     source,
+                    destination,
+                    ssid,
                     ..
-                } => if known_macs.insert(source) {
-                    let name = oui_db.query_by_mac(&source)
-                        .expect("Failed to query OUI database")
-                        .map(|oui| oui.name_short)
-                        .unwrap_or("Unknown".to_string());
-                    if let Some(count) = manufacturer_count.get_mut(&name) {
-                        *count += 1
-                    } else {
-                        manufacturer_count.insert(name, 1);
-                    }
-                },
+                } => {
+                    devices.get_or_default(source, &oui_db)
+                        .sent(true)
+                        .beacon(ssid);
+                    devices.get_or_default(destination, &oui_db)
+                        .sent(false);
+                }
+                Ack {
+                    receiver
+                } => {
+                    devices.get_or_default(receiver, &oui_db)
+                        .sent(false);
+                }
                 _ => ()
             }
         }
     }
     std::mem::drop(terminal);
-    println!("Found:\n{:?}", manufacturer_count);
+    println!("Found:\n{:?}", devices);
+}
+
+/// A device tracked by blockade
+/// Tracks metadata relating to the device
+#[derive(Debug)]
+pub struct KnownDevice {
+    manufacturer: Option<OuiEntry>,
+    /// The SSID of the beacon, or None if not a beacon
+    beacon: Option<String>,
+    /// False if this device is known only by reference from another device, ie. has not sent any data
+    sent: bool,
+}
+impl KnownDevice {
+    fn new(address: MacAddress, oui_db: &OuiDatabase) -> Self {
+        Self {
+            manufacturer: oui_db.query_by_mac(&address).unwrap(/* Library should never be able to return an error */),
+            beacon: None,
+            sent: false
+        }
+    }
+    fn sent(&mut self, sent: bool) -> &mut Self {
+        self.sent = sent;
+        self
+    }
+    fn beacon(&mut self, ssid: String) -> &mut Self {
+        self.beacon = Some(ssid);
+        self
+    }
+}
+
+#[derive(Debug, Default)]
+struct DeviceList(HashMap<MacAddress, KnownDevice>);
+impl DeviceList {
+    fn get_or_default(&mut self, address: MacAddress, oui_db: &OuiDatabase) -> &mut KnownDevice {
+        if self.contains_key(&address) {
+            self.get_mut(&address).unwrap()
+        } else {
+            self.insert(address, KnownDevice::new(address, oui_db));
+            self.get_mut(&address).unwrap()
+        }
+    }
+}
+impl Deref for DeviceList {
+    type Target = HashMap<MacAddress, KnownDevice>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for DeviceList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
