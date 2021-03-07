@@ -3,7 +3,7 @@ use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::RawTerminal, sc
 use tui::{
     backend::TermionBackend,
     layout::{Rect, Constraint, Direction, Layout},
-    widgets::{BarChart, Block, Borders, List, ListItem, Tabs},
+    widgets::{Paragraph, Block, Borders, List, ListItem, Tabs},
     style::{Style, Modifier, Color},
     text::{Span, Spans},
     terminal::Frame
@@ -28,6 +28,13 @@ impl Page for Devices {
     }
 
     fn render(&mut self, frame: &mut Frame<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>>, area: Rect, devices: &mut DeviceList) {
+        fn format_string(value: &str) -> Span {
+            Span::styled(format!("{:?}", value), Style::reset().fg(Color::LightBlue))
+        }
+        fn format_header(title: &str) -> Spans {
+            Spans::from(vec![Span::styled(title, Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))])
+        }
+        
         self.device_state.set_item_count(devices.len());
         let device_list = List::new(
             devices.iter().map(|(mac, device)| {
@@ -54,8 +61,51 @@ impl Page for Devices {
             .block(Block::default().borders(Borders::ALL).title("Devices"))
             .highlight_style(Style::default().bg(Color::Reset).add_modifier(Modifier::REVERSED))
             .highlight_symbol("> ");
+        
+        if let Some((device_mac, device)) = devices.iter().nth(self.device_state.selected().unwrap()) {
+            let areas = Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(0)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            let mut device_info = vec![];
 
-        frame.render_stateful_widget(device_list, area, &mut self.device_state);
+            if let Some(ssid) = &device.beacon {
+                device_info.push(format_header("Beacon"));
+                device_info.push(Spans::from(vec![
+                    Span::raw("  SSID: "),
+                    format_string(ssid)
+                ]));
+                
+            }
+            if let Some(manufacturer) = &device.manufacturer {
+                device_info.push(format_header("Manufacturer"));
+                device_info.push(Spans::from(vec![
+                    Span::raw("  Short Name: "),
+                    format_string(&manufacturer.name_short)
+                ]));
+                if let Some(name_long) = &manufacturer.name_long {
+                    device_info.push(Spans::from(vec![
+                        Span::raw("  Long Name: "),
+                        format_string(name_long)
+                    ]))
+                }
+                if let Some(comment) = &manufacturer.comment {
+                    device_info.push(Spans::from(vec![
+                        Span::raw("  Comment: "),
+                        format_string(comment)
+                    ]))
+                }
+            }
+
+            let device_info = Paragraph::new(device_info)
+                .block(Block::default().borders(Borders::ALL).title(device_mac.to_hex_string()));
+            frame.render_stateful_widget(device_list, areas[0], &mut self.device_state);
+            frame.render_widget(device_info, areas[1])
+        } else {
+            frame.render_stateful_widget(device_list, area, &mut self.device_state);
+        }
+        
     }
 
     fn up(&mut self) {
