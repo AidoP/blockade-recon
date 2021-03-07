@@ -25,7 +25,7 @@ impl FrameType {
             (0, 2) => Self::ReassociationRequest,
             (0, 3) => Self::ReassociationResponse,
             (0, 8) => Self::Beacon,
-            _ => unimplemented!()
+            _ => Self::AssociationRequest
         }
     }
 }
@@ -36,14 +36,16 @@ pub enum Frame {
         destination: Mac,
         source: Mac,
         ssid: String
-    }
+    },
+    None
 }
 impl Frame {
-    pub fn parse(packet: Packet) -> Result<Self> {
-        if packet.data.len() < 32 {
+    pub fn parse(packet: &[u8]) -> Result<Self> {
+        if packet.len() < 32 {
             panic!("Frame too small. 802.11 frames must be >= 32 bytes in length")
         }
-        let frame_control = u16::from_be_bytes([packet.data[0], packet.data[1]]);
+        let frame_control = u16::from_le_bytes([packet[0], packet[1]]);
+        println!("FC: {:08b}", frame_control);
         let version = frame_control & 0b11;
         if version != 0 {
             return Err(Error::InvalidVersion(version));
@@ -51,8 +53,8 @@ impl Frame {
         let frame_type = FrameType::new((frame_control >> 2) & 0b11, (frame_control >> 4) & 0b1111);
 
         match frame_type {
-            FrameType::Beacon => Self::beacon(packet.data),
-            _ => Err(Error::UnrecognisedFrameType)
+            FrameType::Beacon => Self::beacon(packet),
+            _ => Ok(Self::None)
         }
     }
 

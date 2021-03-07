@@ -1,4 +1,5 @@
 use pcap::{Capture, Device};
+use radiotap::Radiotap;
 use clap::{Arg, App};
 use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{backend::TermionBackend, layout::Layout, widgets::{Block, Borders, List, ListItem, ListState}, text::{Span, Spans}};
@@ -61,10 +62,30 @@ fn main() {
     let mut capture = Capture::from_device(device).unwrap()
         .promisc(true)
         .rfmon(true)
-        .immediate_mode(true)
+        .immediate_mode(false)
         .open().unwrap();
+    let mut savefile = capture.savefile("t.pcap").unwrap();
+
+    println!("Current datalink: {:?}", capture.get_datalink().get_name());
+    for dl in capture.list_datalinks().unwrap() {
+        println!("Datalink: {:?}", dl)
+    }
     loop {
-        println!("{:?}", wifi::Frame::parse(capture.next().unwrap()).unwrap());
+        for key in input.stdin.try_iter() {
+            match key {
+                Key::Char('q') => return,
+                _ => ()
+            }
+        }
+        let packet = capture.next().unwrap();
+        savefile.write(&packet);
+        println!();
+        for byte in packet.data {
+            print!("{:b},", byte)
+        }
+        println!();
+        let (radiotap, data) = Radiotap::parse(packet.data).unwrap();
+        println!("{:?}", wifi::Frame::parse(data).unwrap());
         //println!("Packet: {:?}", capture.next().unwrap())
     }
 }
