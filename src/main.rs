@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::{Deref, DerefMut}};
+use std::{collections::{HashMap, HashSet}, ops::{Deref, DerefMut}};
 use eui48::MacAddress;
 use pcap::{Capture, Device};
 use radiotap::Radiotap;
@@ -24,23 +24,22 @@ fn main() {
         .author(env!("CARGO_PKG_AUTHORS"))
         .arg(
             Arg::with_name("interface")
-            .short("i")
-            .long("interface")
-            .help("Don't pick a default wireless interface to sniff traffic on")
+                .short("i")
+                .long("interface")
+                .help("Don't pick a default wireless interface to sniff traffic on")
+        )
+        .arg(
+            Arg::with_name("dont_monitor")
+                .short("m")
+                .long("dont-monitor")
+                .help("Don't try entering monitor mode using libpcap")
         )
         .get_matches();
     
     println!("Parsing Manufacturer Names");
     let oui_db = OuiDatabase::new_from_str(include_str!("oui_database")).expect("Failed to parse MAC address lookup database");
-    let backend = TermionBackend::new(
-        AlternateScreen::from(
-            MouseTerminal::from(
-                std::io::stdout().into_raw_mode().expect("Unable to switch stdout to raw mode")
-            )
-        )
-    );
-    let mut terminal = tui::Terminal::new(backend).expect("Unable to create TUI");
-    let input = ui::Input::new();
+
+    let mut ui = ui::Ui::new();
     
     let device = if args.is_present("interface") {
         let devices = Device::list().expect("Unable to find devices");
@@ -51,12 +50,12 @@ fn main() {
             .highlight_symbol("> ");
         let mut list_state = ui::ListState::with_item_count(devices.len());
 
-        let mut draw = |list: &List, list_state: &mut ui::ListState| terminal.draw(|f| {
+        let mut draw = |list: &List, list_state: &mut ui::ListState| ui.terminal.draw(|f| {
             f.render_stateful_widget(list.clone(), f.size(), list_state)
         }).expect("Unable to create list widget");
         draw(&list, &mut list_state);
         'select_device: loop {
-            for key in input.stdin.iter() {
+            for key in ui.input.stdin.iter() {
                 match key {
                     Key::Esc => return,
                     Key::Up | Key::Char('w') => { list_state.up(); draw(&list, &mut list_state) }
@@ -74,9 +73,9 @@ fn main() {
 
     let mut capture = Capture::from_device(device).unwrap()
         .promisc(true)
-        .rfmon(true)
+        .rfmon(!args.is_present("dont_monitor"))
         .immediate_mode(true)
-        .open().unwrap();
+        .open().unwrap().setnonblock().unwrap();
     let mut savefile = capture.savefile("capture.pcap").unwrap();
 
     if capture.get_datalink() != pcap::Linktype::IEEE802_11_RADIOTAP {
@@ -96,7 +95,7 @@ fn main() {
     let pages: &mut [&mut dyn page::Page] = &mut [&mut page::Devices::new(), &mut page::Manufacturers::new()];
     let mut tabs = ui::TabState::new(pages.iter().map(|p| Spans::from(p.name())).collect());
     'sniff: loop {
-        for key in input.stdin.try_iter() {
+        for key in ui.input.stdin.try_iter() {
             match key {
                 Key::Esc => break 'sniff,
                 Key::F(i) => tabs.select(i as usize),
@@ -109,7 +108,7 @@ fn main() {
             }
         }
 
-        terminal.draw(|frame| {
+        ui.terminal.draw(|frame| {
             let areas = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(0)
@@ -126,35 +125,48 @@ fn main() {
             pages[tabs.index].render(frame, areas[1], &mut devices)
         }).expect("Unable to draw to stdout");
 
-        let packet = capture.next().unwrap();
-        savefile.write(&packet);
+        match capture.next() {
+            Err(pcap::Error::NoMorePackets) | Err(pcap::Error::TimeoutExpired) => (),
+            Err(error) => panic!("Error: {:?}", error),
+            Ok(packet) => {
+                savefile.write(&packet);
         
-        let (radiotap, data) = Radiotap::parse(packet.data).unwrap();
-        use wifi::Frame::*;
-        if let Ok(frame) = wifi::Frame::parse(data) {
-            match frame {
-                Beacon {
-                    source,
-                    destination,
-                    ssid,
-                    ..
-                } => {
-                    devices.get_or_default(source, &oui_db)
-                        .sent()
-                        .beacon(ssid);
-                    devices.get_or_default(destination, &oui_db);
+                let (radiotap, data) = Radiotap::parse(packet.data).unwrap();
+                use wifi::Frame::*;
+                if let Ok(frame) = wifi::Frame::parse(data) {
+                    match frame {
+                        Beacon {
+                            source,
+                            destination,
+                            ssid,
+                            ..
+                        } => {
+                            devices.get_or_default(source, &oui_db)
+                                .sent()
+                                .beacon(ssid)
+                                .knows(destination);
+                            devices.get_or_default(destination, &oui_db);
+                        }
+                        ProbeRequest {
+                            source,
+                            destination,
+                            ..
+                        } => {
+                            devices.get_or_default(source, &oui_db)
+                                .sent()
+                                .knows(destination);
+                        }
+                        Ack {
+                            receiver
+                        } => {
+                            devices.get_or_default(receiver, &oui_db);
+                        }
+                        _ => ()
+                    }
                 }
-                Ack {
-                    receiver
-                } => {
-                    devices.get_or_default(receiver, &oui_db);
-                }
-                _ => ()
             }
         }
     }
-    std::mem::drop(terminal);
-    println!("Found:\n{:?}", devices);
 }
 
 /// A device tracked by blockade
@@ -166,17 +178,24 @@ pub struct KnownDevice {
     beacon: Option<String>,
     /// False if this device is known only by reference from another device, ie. has not sent any data
     sent: bool,
+    /// The devices that this one has referenced
+    knows: HashSet<MacAddress>
 }
 impl KnownDevice {
     fn new(address: MacAddress, oui_db: &OuiDatabase) -> Self {
         Self {
             manufacturer: oui_db.query_by_mac(&address).unwrap(/* Library should never be able to return an error */),
             beacon: None,
-            sent: false
+            sent: false,
+            knows: HashSet::new()
         }
     }
     fn sent(&mut self) -> &mut Self {
         self.sent = true;
+        self
+    }
+    fn knows(&mut self, address: MacAddress) -> &mut Self {
+        self.knows.insert(address);
         self
     }
     fn beacon(&mut self, ssid: String) -> &mut Self {
