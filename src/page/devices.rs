@@ -29,7 +29,7 @@ impl Page for Devices {
 
     fn render(&mut self, frame: &mut Frame<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>>, area: Rect, devices: &mut DeviceList) {
         fn format_string(value: &str) -> Span {
-            Span::styled(format!("{:?}", value), Style::reset().fg(Color::LightBlue))
+            Span::styled(format!("{:?}", value), Style::reset().fg(Color::LightCyan))
         }
         fn format_header(title: &str) -> Spans {
             Spans::from(vec![Span::styled(title, Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))])
@@ -51,7 +51,6 @@ impl Page for Devices {
                         spans.push(Span::styled(format!("{}", name_long), Style::reset().fg(Color::LightCyan)));
                     }
                 }
-
                 ListItem::new(vec![
                     Spans::from(spans)
                 ])
@@ -103,6 +102,17 @@ impl Page for Devices {
                     ]))
                 }
             }
+            if device.knows.len() > 0{
+                device_info.push(format_header("Knows Devices"));
+                let mut devices: Vec<_> = device.knows.iter().collect();
+                devices.sort();
+                for device in devices.iter() {
+                    device_info.push(Spans::from(vec![
+                        Span::styled(format!("  {}", device.to_hex_string()), Style::reset().fg(Color::LightCyan))
+                    ]))
+                }
+            }
+
 
             let device_info = Paragraph::new(device_info)
                 .block(Block::default().borders(Borders::ALL).title(device_mac.to_hex_string()));
