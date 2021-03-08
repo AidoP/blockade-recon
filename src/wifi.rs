@@ -48,6 +48,7 @@ pub enum FrameType {
     AssociationResponse,
     ReassociationRequest,
     ReassociationResponse,
+    ProbeRequest,
     Beacon,
     Ack,
     Reserved,
@@ -60,6 +61,7 @@ impl FrameType {
             (0, 1) => Self::AssociationResponse,
             (0, 2) => Self::ReassociationRequest,
             (0, 3) => Self::ReassociationResponse,
+            (0, 4) => Self::ProbeRequest,
             (0, 8) => Self::Beacon,
             (1, 13) => Self::Ack,
             (2, 13) => Self::Reserved,
@@ -79,6 +81,13 @@ pub enum Frame {
     },
     Ack {
         receiver: MacAddress,
+    },
+    ProbeRequest {
+        destination: MacAddress,
+        source: MacAddress,
+        bssid: MacAddress,
+        ssid: String,
+        tags: Vec<Tag>
     },
     Unknown
 }
@@ -101,6 +110,7 @@ impl Frame {
         match frame_type {
             FrameType::Beacon => Self::beacon(address1, MacAddress::from_bytes(&packet[10..16])?, MacAddress::from_bytes(&packet[16..22])?, u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
             FrameType::Ack => Ok(Self::Ack { receiver: address1 }),
+            FrameType::ProbeRequest => Self::probe_request(address1, MacAddress::from_bytes(&packet[10..16])?, MacAddress::from_bytes(&packet[16..22])?, u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
             _ => Ok(Self::Unknown)
         }
     }
@@ -121,6 +131,17 @@ impl Frame {
         let tags = Tag::parse_all(&data[12..data.len() - 4])?;
         let ssid = tags.iter().find_map(|tag| if let Tag::Ssid(ssid) = tag { Some(ssid.clone()) } else { None }).ok_or(Error::MissingTag("SSID"))?;
         Ok(Self::Beacon {
+            destination,
+            source,
+            bssid,
+            ssid,
+            tags
+        })
+    }
+    pub fn probe_request(destination: MacAddress, source: MacAddress, bssid: MacAddress, sequence_control: u16, data: &[u8]) -> Result<Self> {
+        let tags = Tag::parse_all(&data[0..data.len() - 4])?;
+        let ssid = tags.iter().find_map(|tag| if let Tag::Ssid(ssid) = tag { Some(ssid.clone()) } else { None }).ok_or(Error::MissingTag("SSID"))?;
+        Ok(Self::ProbeRequest {
             destination,
             source,
             bssid,
