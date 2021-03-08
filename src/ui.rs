@@ -1,8 +1,37 @@
 use std::{thread, sync::mpsc::{self, Receiver}, ops::{Deref, DerefMut}};
-use termion::{event::Key, input::TermRead};
+use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::{IntoRawMode, RawTerminal}, screen::AlternateScreen};
 use tui::{
+    backend::TermionBackend,
+    layout::{Constraint, Direction, Layout},
+    widgets::{Block, Borders, Paragraph},
+    style::{Style, Modifier, Color},
     text::Spans
 };
+
+pub type Backend = TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>;
+pub type Terminal = tui::Terminal<Backend>;
+
+pub struct Ui {
+    pub input: Input,
+    pub terminal: Terminal
+}
+impl Ui {
+    pub fn new() -> Self {
+        let backend = TermionBackend::new(
+            AlternateScreen::from(
+                MouseTerminal::from(
+                    std::io::stdout().into_raw_mode().expect("Unable to switch stdout to raw mode")
+                )
+            )
+        );
+        let terminal = tui::Terminal::new(backend).expect("Unable to create TUI");
+        let input = Input::new();
+        Self {
+            input,
+            terminal
+        }
+    }
+}
 
 pub struct ListState{
     state: tui::widgets::ListState,
@@ -120,4 +149,29 @@ impl Input {
             stdin: rx
         }
     }
+}
+
+macro_rules! expect {
+    ($result:expr => $msg:expr) => {
+        match result {
+            Ok(t) => t,
+            Err(e) => {
+                let message = format!("Error @ {}:{}:{}", file!(), line!(), column!())
+            }
+        }
+    };
+}
+
+pub fn error(ui: &mut Ui, spans: Spans) {
+    let _ = ui.input.stdin.try_iter().count();
+    ui.input.stdin.recv();
+
+    ui.terminal.draw(|frame| {
+        frame.render_widget(
+            Paragraph::new(spans)
+                .block(Block::default().borders(Borders::BOTTOM))
+                .style(Style::reset()),
+            frame.size()
+        );
+    }).expect("Unable to draw to stdout");
 }
