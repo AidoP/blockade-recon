@@ -40,9 +40,11 @@ fn main() {
     let oui_db = OuiDatabase::new_from_str(include_str!("oui_database")).expect("Failed to parse MAC address lookup database");
 
     let mut ui = ui::Ui::new();
+
+    let _: Result<(), usize> = expect!(ui => Err(5), "Hello");
     
     let device = if args.is_present("interface") {
-        let devices = Device::list().expect("Unable to find devices");
+        let devices = expect!(ui => Device::list(), "Unable to find devices");
         let devices_names: Vec<_> = devices.iter().map(|d| ListItem::new(vec![Spans::from(d.name.as_str())])).collect();
         let list = List::new(devices_names)
             .block(Block::default().borders(Borders::ALL).title("Select a WiFi Device"))
@@ -50,12 +52,13 @@ fn main() {
             .highlight_symbol("> ");
         let mut list_state = ui::ListState::with_item_count(devices.len());
 
-        let mut draw = |list: &List, list_state: &mut ui::ListState| ui.terminal.draw(|f| {
+        let ui::Ui { terminal, input, ..} = &mut ui;
+        let mut draw = |list: &List, list_state: &mut ui::ListState| terminal.draw(|f| {
             f.render_stateful_widget(list.clone(), f.size(), list_state)
         }).expect("Unable to create list widget");
         draw(&list, &mut list_state);
         'select_device: loop {
-            for key in ui.input.stdin.iter() {
+            for key in input.stdin.iter() {
                 match key {
                     Key::Esc => return,
                     Key::Up | Key::Char('w') => { list_state.up(); draw(&list, &mut list_state) }

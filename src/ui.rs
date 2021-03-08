@@ -2,10 +2,10 @@ use std::{thread, sync::mpsc::{self, Receiver}, ops::{Deref, DerefMut}};
 use termion::{event::Key, input::{MouseTerminal, TermRead}, raw::{IntoRawMode, RawTerminal}, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Layout},
     widgets::{Block, Borders, Paragraph},
     style::{Style, Modifier, Color},
-    text::Spans
+    text::{Spans, Span}
 };
 
 pub type Backend = TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>;
@@ -30,6 +30,18 @@ impl Ui {
             input,
             terminal
         }
+    }
+    pub fn error(&mut self, spans: Vec<Spans>) {
+        self.terminal.draw(|frame| {
+            frame.render_widget(
+                Paragraph::new(spans)
+                    .style(Style::reset())
+                    .alignment(Alignment::Center),
+                Layout::default().margin(3).constraints(vec![Constraint::Percentage(100)]).split(frame.size())[0]
+            );
+        }).expect("Unable to draw to stdout");
+        let _ = self.input.stdin.try_iter().count();
+        let _ = self.input.stdin.recv();
     }
 }
 
@@ -151,27 +163,30 @@ impl Input {
     }
 }
 
+#[macro_export]
 macro_rules! expect {
-    ($result:expr => $msg:expr) => {
-        match result {
+    ($ui:expr => $result:expr, $msg:expr) => {
+        match $result {
             Ok(t) => t,
             Err(e) => {
-                let message = format!("Error @ {}:{}:{}", file!(), line!(), column!())
+                use tui::{style::{Color, Modifier, Style}, text::{Spans, Span}};
+                let location = format!("{}:{}:{}", file!(), line!(), column!());
+                $ui.error(vec![
+                    Spans::from(vec![
+                        Span::styled("Error", Style::default().fg(Color::Red)),
+                        Span::from(" @ "),
+                        Span::styled(location, Style::default().fg(Color::Blue))
+                    ]),
+                    Spans::from(vec![
+                        Span::styled($msg, Style::default().add_modifier(Modifier::BOLD))
+                    ]),
+                    Spans::from(vec![
+                        Span::from("Reason: "),
+                        Span::styled(format!("\"{}\"", e), Style::default().fg(Color::LightRed))
+                    ]),
+                ]);
+                Err(e).expect($msg)
             }
         }
     };
-}
-
-pub fn error(ui: &mut Ui, spans: Spans) {
-    let _ = ui.input.stdin.try_iter().count();
-    ui.input.stdin.recv();
-
-    ui.terminal.draw(|frame| {
-        frame.render_widget(
-            Paragraph::new(spans)
-                .block(Block::default().borders(Borders::BOTTOM))
-                .style(Style::reset()),
-            frame.size()
-        );
-    }).expect("Unable to draw to stdout");
 }
