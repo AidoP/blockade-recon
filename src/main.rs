@@ -61,7 +61,6 @@ fn main() {
             .highlight_symbol("> ");
         let mut list_state = ui::ListState::with_item_count(devices.len());
 
-        //let ui::Ui { terminal, input, ..} = &mut ui;
         fn draw(ui: &mut ui::Ui, list: &List, list_state: &mut ui::ListState) {
             expect!(
                 ui =>
@@ -151,7 +150,7 @@ fn main() {
 
         match capture.next() {
             Err(pcap::Error::NoMorePackets) | Err(pcap::Error::TimeoutExpired) => (),
-            Err(error) => panic!("Error: {:?}", error),
+            Err(error) => expect!(ui => Err(error), "Unable to get next packet"),
             Ok(packet) => {
                 savefile.write(&packet);
         
@@ -254,7 +253,6 @@ impl DeviceList {
         values.sort_by(|(nl, l), (nr, r)| l.cmp(r).then_with(|| nl.cmp(nr)));
         values.reverse();
         values
-        //&[("Apples and Oranges", 3)]
     }
 }
 impl Deref for DeviceList {

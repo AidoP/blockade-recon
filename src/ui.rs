@@ -31,7 +31,21 @@ impl Ui {
             terminal
         }
     }
-    pub fn error(&mut self, spans: Vec<Spans>) {
+    pub fn error(&mut self, location: String, message: &str, error: &dyn std::fmt::Display) {
+        let spans = vec![
+            Spans::from(vec![
+                Span::styled("Error", Style::default().fg(Color::Red)),
+                Span::from(" @ "),
+                Span::styled(location, Style::default().fg(Color::Blue))
+            ]),
+            Spans::from(vec![
+                Span::styled(message, Style::default().add_modifier(Modifier::BOLD))
+            ]),
+            Spans::from(vec![
+                Span::from("Reason: "),
+                Span::styled(format!("\"{}\"", error), Style::default().fg(Color::LightRed))
+            ])
+        ];
         self.terminal.draw(|frame| {
             frame.render_widget(
                 Paragraph::new(spans)
@@ -171,20 +185,7 @@ macro_rules! expect {
             Err(e) => {
                 use tui::{style::{Color, Modifier, Style}, text::{Spans, Span}};
                 let location = format!("{}:{}:{}", file!(), line!(), column!());
-                $ui.error(vec![
-                    Spans::from(vec![
-                        Span::styled("Error", Style::default().fg(Color::Red)),
-                        Span::from(" @ "),
-                        Span::styled(location, Style::default().fg(Color::Blue))
-                    ]),
-                    Spans::from(vec![
-                        Span::styled($msg, Style::default().add_modifier(Modifier::BOLD))
-                    ]),
-                    Spans::from(vec![
-                        Span::from("Reason: "),
-                        Span::styled(format!("\"{}\"", e), Style::default().fg(Color::LightRed))
-                    ]),
-                ]);
+                $ui.error(location, $msg, &e);
                 Err(e).expect($msg)
             }
         }
