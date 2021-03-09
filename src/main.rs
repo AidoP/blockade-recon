@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ops::{Deref, DerefMut}};
+use std::{collections::{HashMap, HashSet}, ops::{Deref, DerefMut}, fs};
 use eui48::MacAddress;
 use pcap::{Capture, Device};
 use radiotap::Radiotap;
@@ -34,10 +34,20 @@ fn main() {
                 .long("dont-monitor")
                 .help("Don't try entering monitor mode using libpcap")
         )
+        .arg(
+            Arg::with_name("database")
+                .short("-f")
+                .long("dbfile")
+                .help("Specify the path to the OUI database file")
+                .default_value("oui_database")
+        )
         .get_matches();
     
     println!("Parsing Manufacturer Names");
-    let oui_db = OuiDatabase::new_from_str(include_str!("oui_database")).expect("Failed to parse MAC address lookup database");
+    let oui_db = match fs::read_to_string(args.value_of("database").unwrap()) {
+        Ok(s) => OuiDatabase::new_from_str(&s).expect("Failed to parse MAC address lookup database"),
+        Err(e) => panic!("Failed to open database file: {:?}", e),
+    };
 
     let mut ui = ui::Ui::new();
 
