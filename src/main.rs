@@ -61,23 +61,30 @@ fn main() {
             .highlight_symbol("> ");
         let mut list_state = ui::ListState::with_item_count(devices.len());
 
-        let ui::Ui { terminal, input, ..} = &mut ui;
-        let mut draw = |list: &List, list_state: &mut ui::ListState| terminal.draw(|f| {
-            f.render_stateful_widget(list.clone(), f.size(), list_state)
-        }).expect("Unable to create list widget");
-        draw(&list, &mut list_state);
+        //let ui::Ui { terminal, input, ..} = &mut ui;
+        fn draw(ui: &mut ui::Ui, list: &List, list_state: &mut ui::ListState) {
+            expect!(
+                ui =>
+                    ui.terminal.draw(|f| f.render_stateful_widget(list.clone(), f.size(), list_state)), 
+                    "Unable to create list widget"
+            )
+        }
+        draw(&mut ui, &list, &mut list_state);
         'select_device: loop {
-            for key in input.stdin.iter() {
+            for key in ui.input.stdin.iter() {
                 match key {
                     Key::Esc => return,
-                    Key::Up | Key::Char('w') => { list_state.up(); draw(&list, &mut list_state) }
-                    Key::Down | Key::Char('s') => { list_state.down(); draw(&list, &mut list_state) }
-                    Key::PageUp => { list_state.top(); draw(&list, &mut list_state) }
-                    Key::PageDown => { list_state.bottom(); draw(&list, &mut list_state) }
+                    Key::Up | Key::Char('w') => list_state.up(),
+                    Key::Down | Key::Char('s') => list_state.down(),
+                    Key::PageUp => list_state.top(),
+                    Key::PageDown => list_state.bottom(),
                     Key::Char('\n') => break 'select_device devices[list_state.selected().unwrap()].clone(),
-                    _ => ()
+                    _ => continue
                 }
+                // Control flow will return after mutably borrowing the ui
+                break
             }
+            draw(&mut ui, &list, &mut list_state);
         }
     } else {
         Device::lookup().expect("Unable to choose a default device")
