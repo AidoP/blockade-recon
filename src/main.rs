@@ -90,12 +90,13 @@ fn main() {
         expect!(ui => Device::lookup(), "Unable to choose a default device")
     };
 
-    let mut capture = Capture::from_device(device).unwrap()
+    let capture = expect!(ui => Capture::from_device(device), "Unable to open capture device")
         .promisc(true)
         .rfmon(!args.is_present("dont_monitor"))
-        .immediate_mode(true)
-        .open().unwrap().setnonblock().unwrap();
-    let mut savefile = capture.savefile("capture.pcap").unwrap();
+        .immediate_mode(true);
+    let capture = expect!(ui => capture.open(), "Unable to start listening on capture device");
+    let mut capture = expect!(ui => capture.setnonblock(), "Unable to capture packets in a non-blocking fashion");
+    let mut savefile = expect!(ui => capture.savefile("capture.pcap"), "Unable to create save file for packet capture");
 
     if capture.get_datalink() != pcap::Linktype::IEEE802_11_RADIOTAP {
         let mut ok = false;
