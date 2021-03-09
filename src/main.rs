@@ -36,20 +36,21 @@ fn main() {
         )
         .arg(
             Arg::with_name("database")
-                .short("-f")
-                .long("dbfile")
+                .short("-d")
+                .long("database")
                 .help("Specify the path to the OUI database file")
-                .default_value("oui_database")
+                .value_name("FILE")
         )
         .get_matches();
-    
-    println!("Parsing Manufacturer Names");
-    let oui_db = match fs::read_to_string(args.value_of("database").unwrap()) {
-        Ok(s) => OuiDatabase::new_from_str(&s).expect("Failed to parse MAC address lookup database"),
-        Err(e) => panic!("Failed to open database file: {:?}", e),
-    };
 
     let mut ui = ui::Ui::new();
+
+    let oui_db = if let Some(oui_path) = args.value_of("database") {
+        let user_db = expect!(ui => fs::read_to_string(oui_path), "Unable to open specified OUI database file");
+        expect!(ui => OuiDatabase::new_from_str(&user_db), "Unable to parse specified OUI database file")
+    } else {
+        expect!(ui => OuiDatabase::new_from_export(include_bytes!("../manuf")), "Unable to parse default OUI database")
+    };
     
     let device = if args.is_present("interface") {
         let devices = expect!(ui => Device::list(), "Unable to find devices");
