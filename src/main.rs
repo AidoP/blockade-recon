@@ -87,7 +87,7 @@ fn main() {
             draw(&mut ui, &list, &mut list_state);
         }
     } else {
-        Device::lookup().expect("Unable to choose a default device")
+        expect!(ui => Device::lookup(), "Unable to choose a default device")
     };
 
     let mut capture = Capture::from_device(device).unwrap()
@@ -99,14 +99,14 @@ fn main() {
 
     if capture.get_datalink() != pcap::Linktype::IEEE802_11_RADIOTAP {
         let mut ok = false;
-        for datalink in capture.list_datalinks().expect("Unable to determine supported datalink layers") {
+        for datalink in expect!(ui => capture.list_datalinks(), "Unable to determine supported datalink layers") {
             if datalink == pcap::Linktype::IEEE802_11_RADIOTAP {
                 ok = true;
-                capture.set_datalink(datalink).expect("Unable to set the datalink layer")
+                expect!(ui => capture.set_datalink(datalink), "Unable to set the datalink layer")
             }
         }
         if !ok {
-            panic!("The interface does not support the radiotap datalink layer required by this program")
+            let _: () = expect!(ui => Err(""), "The interface does not support the radiotap datalink layer required by this program");
         }
     }
 
@@ -127,22 +127,26 @@ fn main() {
             }
         }
 
-        ui.terminal.draw(|frame| {
-            let areas = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(0)
-                .constraints([Constraint::Length(2), Constraint::Min(0)])
-                .split(frame.size());
-            frame.render_widget(
-                Tabs::new(tabs.titles.clone())
-                    .block(Block::default().borders(Borders::BOTTOM))
-                    .select(tabs.index)
-                    .style(Style::reset())
-                    .highlight_style(Style::reset().add_modifier(Modifier::BOLD | Modifier::REVERSED)),
-                areas[0]
-            );
-            pages[tabs.index].render(frame, areas[1], &mut devices)
-        }).expect("Unable to draw to stdout");
+        expect!(
+            ui =>
+                ui.terminal.draw(|frame| {
+                    let areas = Layout::default()
+                        .direction(Direction::Vertical)
+                        .margin(0)
+                        .constraints([Constraint::Length(2), Constraint::Min(0)])
+                        .split(frame.size());
+                    frame.render_widget(
+                        Tabs::new(tabs.titles.clone())
+                            .block(Block::default().borders(Borders::BOTTOM))
+                            .select(tabs.index)
+                            .style(Style::reset())
+                            .highlight_style(Style::reset().add_modifier(Modifier::BOLD | Modifier::REVERSED)),
+                        areas[0]
+                    );
+                    pages[tabs.index].render(frame, areas[1], &mut devices)
+                }),
+                "Unable to draw to stdout"
+        );
 
         match capture.next() {
             Err(pcap::Error::NoMorePackets) | Err(pcap::Error::TimeoutExpired) => (),
@@ -150,7 +154,7 @@ fn main() {
             Ok(packet) => {
                 savefile.write(&packet);
         
-                let (radiotap, data) = Radiotap::parse(packet.data).unwrap();
+                let (radiotap, data) = expect!(ui => Radiotap::parse(packet.data), "Unable to parse radiotap header");
                 use wifi::Frame::*;
                 if let Ok(frame) = wifi::Frame::parse(data) {
                     match frame {
