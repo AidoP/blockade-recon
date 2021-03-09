@@ -50,8 +50,6 @@ fn main() {
     };
 
     let mut ui = ui::Ui::new();
-
-    let _: Result<(), usize> = expect!(ui => Err(5), "Hello");
     
     let device = if args.is_present("interface") {
         let devices = expect!(ui => Device::list(), "Unable to find devices");
