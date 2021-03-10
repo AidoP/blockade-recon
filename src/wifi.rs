@@ -1,7 +1,103 @@
 use eui48::MacAddress;
 
+macro_rules! mac {
+    ($bytes:expr => $start:expr) => {
+        MacAddress::new([
+            $bytes[$start],
+            $bytes[$start + 1],
+            $bytes[$start + 2],
+            $bytes[$start + 3],
+            $bytes[$start + 4],
+            $bytes[$start + 5]
+        ])
+    };
+}
+macro_rules! u64 {
+    (le[$bytes:expr => $start:expr]) => {
+        u64::from_le_bytes([
+            $bytes[$start],
+            $bytes[$start + 1],
+            $bytes[$start + 2],
+            $bytes[$start + 3],
+            $bytes[$start + 4],
+            $bytes[$start + 5],
+            $bytes[$start + 6],
+            $bytes[$start + 7]
+        ])
+    };
+}
+
 #[derive(Debug)]
-pub enum Tag {
+pub enum FrameType {
+    Control(ControlFrame),
+    Management(ManagementFrame),
+    Data(DataFrame),
+    Extension(ExtensionFrame)
+}
+impl FrameType {
+    fn new(ty: u8, subty: u8, flags: u8, address1: MacAddress, frame: &[u8]) -> Result<Self> {
+        match (ty, subty) {
+            (0, 8) => ManagementFrame::beacon(frame, address1),
+            (1, 13) => ControlFrame::ack(),
+            (2, 0) => DataFrame::data(),
+            _ => Err(Error::UnrecognisedFrameType)
+        }
+    }
+}
+
+pub struct Frame<'a> {
+    pub frame_type: FrameType,
+    pub duration: u16,
+    pub body: &'a [u8],
+    pub fcs: u32
+}
+impl<'a> Frame<'a> {
+    pub fn new(mut frame: &'a [u8]) -> Result<Self> {
+        if frame.len() < 10 {
+            return Err(Error::UnexpectedEof)
+        }
+        let frame_control = frame[0];
+        let flags = frame[1];
+        let duration = u16::from_le_bytes([frame[2], frame[3]]);
+        let address1 = mac!(frame => 4);
+
+        let version = frame_control & 0b11;
+        if version != 0 {
+            return Err(Error::InvalidVersion(version));
+        }
+        let frame_type = FrameType::new(
+            (frame_control >> 2) & 0b11, 
+            (frame_control >> 4) & 0b1111,
+            flags,
+            address1,
+            &mut frame
+        )?;
+        let fcs = u32::from_le_bytes({
+            let b = &frame[frame.len() - 4..];
+            [b[0], b[1], b[2], b[3]]
+        });
+        let body = &frame[..frame.len() - 4];
+        Ok(Self {
+            frame_type,
+            duration,
+            body,
+            fcs
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ControlFrame {
+    Ack
+}
+impl ControlFrame {
+    fn ack() -> Result<FrameType> {
+        Ok(FrameType::Control(Self::Ack))
+    }
+}
+
+#[derive(Debug)]
+pub enum ManagementTag {
     Ssid(String),
     SupportedRates(Vec<u8>),
     Country {
@@ -12,7 +108,7 @@ pub enum Tag {
     },
     Unknown
 }
-impl Tag {
+impl ManagementTag {
     /// Parse a single management tag, removing itself from the start of the given buffer
     pub fn parse(data: &mut &[u8]) -> Result<Self> {
         let &length = data.get(1).ok_or(Error::UnexpectedEof)?;
@@ -41,114 +137,65 @@ impl Tag {
         Ok(tags)
     }
 }
-
 #[derive(Debug)]
-pub enum FrameType {
-    AssociationRequest,
-    AssociationResponse,
-    ReassociationRequest,
-    ReassociationResponse,
-    ProbeRequest,
-    Beacon,
-    Ack,
-    Reserved,
-    Unknown
-}
-impl FrameType {
-    fn new(ty: u8, subty: u8) -> Self {
-        match (ty, subty) {
-            (0, 0) => Self::AssociationRequest,
-            (0, 1) => Self::AssociationResponse,
-            (0, 2) => Self::ReassociationRequest,
-            (0, 3) => Self::ReassociationResponse,
-            (0, 4) => Self::ProbeRequest,
-            (0, 8) => Self::Beacon,
-            (1, 13) => Self::Ack,
-            (2, 13) => Self::Reserved,
-            _ => Self::Unknown
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Frame {
+pub enum ManagementFields {
     Beacon {
-        destination: MacAddress,
-        source: MacAddress,
-        bssid: MacAddress,
+        timestamp: u64,
         ssid: String,
-        tags: Vec<Tag>
+        supported_rates: Vec<u8>,
+        tags: Vec<ManagementTag>
     },
-    Ack {
-        receiver: MacAddress,
-    },
-    ProbeRequest {
-        destination: MacAddress,
-        source: MacAddress,
-        bssid: MacAddress,
-        ssid: String,
-        tags: Vec<Tag>
-    },
-    Unknown
+    None
 }
-impl Frame {
-    pub fn parse(packet: &[u8]) -> Result<Self> {
-        if packet.len() < 10 {
-            return Err(Error::UnexpectedEof)
-        }
-        let frame_control = packet[0];
-        let flags = packet[1];
-        let duration = u16::from_le_bytes([packet[2], packet[3]]);
-        let address1 = MacAddress::from_bytes(&packet[4..10])?;
-
-        let version = frame_control & 0b11;
-        if version != 0 {
-            return Err(Error::InvalidVersion(version));
-        }
-        let frame_type = FrameType::new((frame_control >> 2) & 0b11, (frame_control >> 4) & 0b1111);
-
-        match frame_type {
-            FrameType::Beacon => Self::beacon(address1, MacAddress::from_bytes(&packet[10..16])?, MacAddress::from_bytes(&packet[16..22])?, u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
-            FrameType::Ack => Ok(Self::Ack { receiver: address1 }),
-            FrameType::ProbeRequest => Self::probe_request(address1, MacAddress::from_bytes(&packet[10..16])?, MacAddress::from_bytes(&packet[16..22])?, u16::from_le_bytes([packet[22], packet[23]]), &packet[24..]),
-            _ => Ok(Self::Unknown)
+#[derive(Debug)]
+pub struct ManagementFrame {
+    pub receiver: MacAddress,
+    pub transmitter: MacAddress,
+    pub bssid: MacAddress,
+    pub sequence_control: u16,
+    pub fields: ManagementFields
+}
+impl ManagementFrame {
+    fn new(frame: &[u8], receiver: MacAddress, fields: ManagementFields) -> Self {
+        Self {
+            receiver,
+            transmitter: mac!(frame => 10),
+            bssid: mac!(frame => 16),
+            sequence_control: u16::from_le_bytes([frame[22], frame[23]]),
+            fields
         }
     }
-
-    /// Get the MacAddress of the sender of the packet
-    /// Though all packets are sent by *someone*, not all packets advertise such
-    pub fn sender(&self) -> Option<MacAddress> {
-        match self {
-            &Frame::Beacon { source, ..} => Some(source),
-            _ => None
+    fn beacon(frame: &[u8], receiver: MacAddress) -> Result<FrameType> {
+        if frame.len() < 40 {
+            Err(Error::UnexpectedEof)
+        } else {
+            let data = &frame[24..frame.len() - 4];
+            let tags = ManagementTag::parse_all(&data[12..])?;
+            let fields = ManagementFields::Beacon {
+                timestamp: u64!(le[data => 0]),
+                ssid: tags.iter().find_map(|t| if let ManagementTag::Ssid(ssid) = t { Some(ssid.clone()) } else { None }).ok_or(Error::MissingTag("SSID"))?,
+                supported_rates: tags.iter().find_map(|t| if let ManagementTag::SupportedRates(rates) = t { Some(rates.clone()) } else { None }).ok_or(Error::MissingTag("Supported Rates"))?,
+                tags
+            };
+            Ok(FrameType::Management(Self::new(frame, receiver, fields)))
         }
     }
+}
 
-    pub fn beacon(destination: MacAddress, source: MacAddress, bssid: MacAddress, sequence_control: u16, data: &[u8]) -> Result<Self> {
-        let timestamp = u64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]);
-        let beacon_interval = u16::from_le_bytes([data[8], data[9]]);
-        let capabilities = u16::from_le_bytes([data[10], data[11]]);
-        let tags = Tag::parse_all(&data[12..data.len() - 4])?;
-        let ssid = tags.iter().find_map(|tag| if let Tag::Ssid(ssid) = tag { Some(ssid.clone()) } else { None }).ok_or(Error::MissingTag("SSID"))?;
-        Ok(Self::Beacon {
-            destination,
-            source,
-            bssid,
-            ssid,
-            tags
-        })
+#[derive(Debug)]
+pub enum DataFrame {
+    Data
+}
+impl DataFrame {
+    fn data() -> Result<FrameType> {
+        Ok(FrameType::Data(Self::Data))
     }
-    pub fn probe_request(destination: MacAddress, source: MacAddress, bssid: MacAddress, sequence_control: u16, data: &[u8]) -> Result<Self> {
-        let tags = Tag::parse_all(&data[0..data.len() - 4])?;
-        let ssid = tags.iter().find_map(|tag| if let Tag::Ssid(ssid) = tag { Some(ssid.clone()) } else { None }).ok_or(Error::MissingTag("SSID"))?;
-        Ok(Self::ProbeRequest {
-            destination,
-            source,
-            bssid,
-            ssid,
-            tags
-        })
-    }
+}
+
+#[derive(Debug)]
+pub enum ExtensionFrame {
+}
+impl ExtensionFrame {
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -158,10 +205,9 @@ pub enum Error {
     InvalidVersion(u8),
     UnrecognisedFrameType,
     MissingTag(&'static str),
-    InvalidMac(eui48::ParseError)
 }
 impl From<eui48::ParseError> for Error {
-    fn from(error: eui48::ParseError) -> Self {
-        Self::InvalidMac(error)
+    fn from(_: eui48::ParseError) -> Self {
+        Self::UnexpectedEof
     }
 }

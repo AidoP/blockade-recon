@@ -155,36 +155,34 @@ fn main() {
                 savefile.write(&packet);
         
                 let (radiotap, data) = expect!(ui => Radiotap::parse(packet.data), "Unable to parse radiotap header");
-                use wifi::Frame::*;
-                if let Ok(frame) = wifi::Frame::parse(data) {
-                    match frame {
-                        Beacon {
-                            source,
-                            destination,
-                            ssid,
-                            ..
-                        } => {
-                            devices.get_or_default(source, &oui_db)
+                if let Ok(wifi::Frame {frame_type, ..}) = wifi::Frame::new(data) {
+                    use wifi::{FrameType::*, ControlFrame, ManagementFrame, DataFrame, ExtensionFrame};
+                    match frame_type {
+                        Control(ControlFrame::Ack) => {
+
+                        }
+                        Management(ManagementFrame {
+                            receiver,
+                            transmitter,
+                            bssid,
+                            sequence_control,
+                            fields
+                        }) => {
+                            use wifi::{ManagementFields::*, ManagementTag::*};
+                            let sender = devices.get_or_default(transmitter, &oui_db)
                                 .sent()
-                                .beacon(ssid)
-                                .knows(destination);
-                            devices.get_or_default(destination, &oui_db);
+                                .knows(receiver);
+                            match fields {
+                                Beacon { ssid, ..} => sender.beacon(ssid).done(),
+                                _ => ()
+                            };
                         }
-                        ProbeRequest {
-                            source,
-                            destination,
-                            ..
-                        } => {
-                            devices.get_or_default(source, &oui_db)
-                                .sent()
-                                .knows(destination);
+                        Data(DataFrame::Data) => {
+
                         }
-                        Ack {
-                            receiver
-                        } => {
-                            devices.get_or_default(receiver, &oui_db);
+                        Extension(_) => {
+
                         }
-                        _ => ()
                     }
                 }
             }
@@ -225,6 +223,8 @@ impl KnownDevice {
         self.beacon = Some(ssid);
         self
     }
+    /// Dummy function to consume the unnecessary reference
+    fn done(&mut self) {}
 }
 
 #[derive(Debug, Default)]

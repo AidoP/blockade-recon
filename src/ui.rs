@@ -183,7 +183,6 @@ macro_rules! expect {
         match $result {
             Ok(t) => t,
             Err(e) => {
-                use tui::{style::{Color, Modifier, Style}, text::{Spans, Span}};
                 let location = format!("{}:{}:{}", file!(), line!(), column!());
                 $ui.error(location, $msg, &e);
                 Err(e).expect($msg)
