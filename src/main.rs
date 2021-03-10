@@ -207,12 +207,14 @@ fn main() {
 pub struct Transmission {
     instant: time::Instant,
     signal: Option<radiotap::field::AntennaSignal>,
+    channel: Option<radiotap::field::Channel>
 }
 impl Transmission {
     fn new(radiotap: Radiotap) -> Self {
         Self {
             instant: time::Instant::now(),
-            signal: radiotap.antenna_signal
+            signal: radiotap.antenna_signal,
+            channel: radiotap.channel
         }
     }
 }

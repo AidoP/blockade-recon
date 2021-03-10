@@ -70,18 +70,27 @@ impl Page for Devices {
                 .split(area);
             let mut device_info = vec![];
 
-            if let Some(crate::Transmission { instant, signal }) = device.sent {
+            if let Some(crate::Transmission { instant, signal, channel }) = device.sent {
                 device_info.push(Spans::from(vec![
                     Span::styled("Last seen ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
                     Span::styled(format!("{:.1}", std::time::Instant::now().duration_since(instant).as_secs_f32()), Style::default().fg(VALUE_COLOR).add_modifier(Modifier::BOLD)),
                     Span::styled("s ago", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD))
                 ]));
-                if let Some(signal) = signal {
+                if signal.is_some() || channel.is_some() {
                     device_info.push(format_header("Radio"));
+                }
+                if let Some(signal) = signal {
                     device_info.push(Spans::from(vec![
                         Span::raw("  Signal Strength: "),
                         Span::styled(format!("{}", signal.value), Style::default().fg(VALUE_COLOR)),
                         Span::raw("db")
+                    ]));
+                }
+                if let Some(channel) = channel {
+                    device_info.push(Spans::from(vec![
+                        Span::raw("  Channel: "),
+                        Span::styled(format!("{}", channel.freq), Style::default().fg(VALUE_COLOR)),
+                        Span::raw("MHz")
                     ]));
                 }
             } else {
