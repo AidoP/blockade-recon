@@ -169,6 +169,7 @@ fn main() {
                             fields
                         }) => {
                             use wifi::{ManagementFields::*, ManagementTag::*};
+                            devices.get_or_default(receiver, &oui_db);
                             let sender = devices.get_or_default(transmitter, &oui_db)
                                 .sent()
                                 .knows(receiver);
@@ -177,11 +178,24 @@ fn main() {
                                 _ => ()
                             };
                         }
-                        Data(DataFrame::Data) => {
-
+                        Data(DataFrame {
+                            receiver,
+                            transmitter,
+                            source,
+                            destination,
+                            bssid,
+                            sequence_control
+                        }) => {
+                            devices.get_or_default(source, &oui_db)
+                                .sent()
+                                .knows(destination);
+                            devices.get_or_default(transmitter, &oui_db)
+                                .sent()
+                                .knows(receiver);
+                            devices.get_or_default(destination, &oui_db);
+                            devices.get_or_default(receiver, &oui_db);
                         }
                         Extension(_) => {
-
                         }
                     }
                 }

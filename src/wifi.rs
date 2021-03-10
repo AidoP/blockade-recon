@@ -39,7 +39,7 @@ impl FrameType {
         match (ty, subty) {
             (0, 8) => ManagementFrame::beacon(frame, address1),
             (1, 13) => ControlFrame::ack(),
-            (2, 0) => DataFrame::data(),
+            (2, 0) => DataFrame::data(frame, flags, address1),
             _ => Err(Error::UnrecognisedFrameType)
         }
     }
@@ -144,8 +144,7 @@ pub enum ManagementFields {
         ssid: String,
         supported_rates: Vec<u8>,
         tags: Vec<ManagementTag>
-    },
-    None
+    }
 }
 #[derive(Debug)]
 pub struct ManagementFrame {
@@ -183,12 +182,42 @@ impl ManagementFrame {
 }
 
 #[derive(Debug)]
-pub enum DataFrame {
-    Data
+pub struct DataFrame {
+    pub receiver: MacAddress,
+    pub transmitter: MacAddress,
+    pub destination: MacAddress,
+    pub source: MacAddress,
+    pub bssid: Option<MacAddress>,
+    pub sequence_control: u16
 }
 impl DataFrame {
-    fn data() -> Result<FrameType> {
-        Ok(FrameType::Data(Self::Data))
+    fn data(frame: &[u8], flags: u8, receiver: MacAddress) -> Result<FrameType> {
+        let to_ds = flags & 0b1 != 0;
+        let from_ds = flags & 0b10 != 0;
+
+        if to_ds && from_ds && frame.len() < 40 {
+            Err(Error::UnexpectedEof)
+        } else if frame.len() < 34 {
+            Err(Error::UnexpectedEof)
+        } else {
+            let transmitter = mac!(frame => 10);
+            let address3 = mac!(frame => 16);
+            let (destination, source, bssid) = match (to_ds, from_ds) {
+                (false, false) => (receiver, transmitter, Some(address3)),
+                (false, true) => (receiver, address3, Some(transmitter)),
+                (true, false) => (address3, transmitter, Some(receiver)),
+                (true, true) => (address3, mac!(frame => 24), None)
+            };
+            let sequence_control = u16::from_le_bytes([frame[22], frame[23]]);
+            Ok(FrameType::Data(Self {
+                receiver,
+                transmitter,
+                destination,
+                source,
+                bssid,
+                sequence_control
+            }))
+        }
     }
 }
 
