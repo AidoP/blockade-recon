@@ -28,8 +28,9 @@ impl Page for Devices {
     }
 
     fn render(&mut self, frame: &mut Frame<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<std::io::Stdout>>>>>, area: Rect, devices: &mut DeviceList) {
+        const VALUE_COLOR: Color = Color::LightCyan;
         fn format_string(value: &str) -> Span {
-            Span::styled(format!("{:?}", value), Style::reset().fg(Color::LightCyan))
+            Span::styled(format!("{:?}", value), Style::reset().fg(VALUE_COLOR))
         }
         fn format_header(title: &str) -> Spans {
             Spans::from(vec![Span::styled(title, Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))])
@@ -39,7 +40,7 @@ impl Page for Devices {
         let device_list = List::new(
             devices.iter().map(|(mac, device)| {
                 let mut spans = vec![];
-                let colour = if device.sent {
+                let colour = if device.sent.is_some() {
                     Color::LightGreen
                 } else {
                     Color::LightYellow
@@ -69,11 +70,24 @@ impl Page for Devices {
                 .split(area);
             let mut device_info = vec![];
 
-            if !device.sent {
+            if let Some(crate::Transmission { instant, signal }) = device.sent {
+                device_info.push(Spans::from(vec![
+                    Span::styled("Last seen ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("{:.1}", std::time::Instant::now().duration_since(instant).as_secs_f32()), Style::default().fg(VALUE_COLOR).add_modifier(Modifier::BOLD)),
+                    Span::styled("s ago", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD))
+                ]));
+                if let Some(signal) = signal {
+                    device_info.push(format_header("Radio"));
+                    device_info.push(Spans::from(vec![
+                        Span::raw("  Signal Strength: "),
+                        Span::styled(format!("{}", signal.value), Style::default().fg(VALUE_COLOR)),
+                        Span::raw("db")
+                    ]));
+                }
+            } else {
                 device_info.push(Spans::from(vec![
                     Span::styled("Known by reference from other devices only", Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD))
                 ]));
-                
             }
             if let Some(ssid) = &device.beacon {
                 device_info.push(format_header("Beacon"));

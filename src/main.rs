@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ops::{Deref, DerefMut}, fs};
+use std::{collections::{HashMap, HashSet}, ops::{Deref, DerefMut}, fs, time};
 use eui48::MacAddress;
 use pcap::{Capture, Device};
 use radiotap::Radiotap;
@@ -171,7 +171,7 @@ fn main() {
                             use wifi::{ManagementFields::*, ManagementTag::*};
                             devices.get_or_default(receiver, &oui_db);
                             let sender = devices.get_or_default(transmitter, &oui_db)
-                                .sent()
+                                .sent(radiotap)
                                 .knows(receiver);
                             match fields {
                                 Beacon { ssid, ..} => sender.beacon(ssid).done(),
@@ -187,10 +187,9 @@ fn main() {
                             sequence_control
                         }) => {
                             devices.get_or_default(source, &oui_db)
-                                .sent()
                                 .knows(destination);
                             devices.get_or_default(transmitter, &oui_db)
-                                .sent()
+                                .sent(radiotap)
                                 .knows(receiver);
                             devices.get_or_default(destination, &oui_db);
                             devices.get_or_default(receiver, &oui_db);
@@ -204,6 +203,20 @@ fn main() {
     }
 }
 
+#[derive(Debug)]
+pub struct Transmission {
+    instant: time::Instant,
+    signal: Option<radiotap::field::AntennaSignal>,
+}
+impl Transmission {
+    fn new(radiotap: Radiotap) -> Self {
+        Self {
+            instant: time::Instant::now(),
+            signal: radiotap.antenna_signal
+        }
+    }
+}
+
 /// A device tracked by blockade
 /// Tracks metadata relating to the device
 #[derive(Debug)]
@@ -211,8 +224,8 @@ pub struct KnownDevice {
     manufacturer: Option<OuiEntry>,
     /// The SSID of the beacon, or None if not a beacon
     beacon: Option<String>,
-    /// False if this device is known only by reference from another device, ie. has not sent any data
-    sent: bool,
+    /// The last transmission from this device, or None if known by reference only
+    sent: Option<Transmission>,
     /// The devices that this one has referenced
     knows: HashSet<MacAddress>
 }
@@ -221,12 +234,12 @@ impl KnownDevice {
         Self {
             manufacturer: oui_db.query_by_mac(&address).unwrap(/* Library should never be able to return an error */),
             beacon: None,
-            sent: false,
+            sent: None,
             knows: HashSet::new()
         }
     }
-    fn sent(&mut self) -> &mut Self {
-        self.sent = true;
+    fn sent(&mut self, radiotap: Radiotap) -> &mut Self {
+        self.sent = Some(Transmission::new(radiotap));
         self
     }
     fn knows(&mut self, address: MacAddress) -> &mut Self {

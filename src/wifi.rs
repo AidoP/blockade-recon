@@ -39,7 +39,7 @@ impl FrameType {
         match (ty, subty) {
             (0, 8) => ManagementFrame::beacon(frame, address1),
             (1, 13) => ControlFrame::ack(),
-            (2, 0) => DataFrame::data(frame, flags, address1),
+            (2, _) => DataFrame::data(frame, flags, address1),
             _ => Err(Error::UnrecognisedFrameType)
         }
     }
